@@ -5,7 +5,7 @@
 | `expression\|dice_notation(locale)` | The expression in the notation of a language; an invalid one as it is |
 | `expression\|dice_dialect('roll20')` | The commands of a table's dialect, or null when the dialect cannot write it |
 | `dice_roll(expression, locale)` | A `PoolResult` |
-| `dice_roll_detail(result, member, locale)` | The detail of a roll, as HTML |
+| `dice_roll_detail(result, member, locale, viewer)` | The detail of a roll, as HTML |
 | `dice_text(message)` | A word of the detail, through the translator |
 
 ## The detail of a roll
@@ -29,8 +29,32 @@ classes:
 | `is-success`, `is-failure` | success, failure |
 | `is-from-reroll`, `is-from-explosion` | — |
 
-With a member, each set carries the appearance of their dice: `data-dice-appearance`, `data-dice-material` and the
-variable `--tilttek-dice-color`. The bundle ships no stylesheet; the classes are hooks for the application's.
+With a member, each set carries the appearance of their dice. The fourth argument, `'high-contrast'` or `'standard'`, is
+the viewer's accessibility — a setting of theirs, or what the page read from `prefers-contrast: more` or
+`forced-colors: active` —, passed to the appearance; any other text, or none, is no preference:
+
+```twig
+{{ dice_roll_detail(roll, member, app.request.locale, 'high-contrast') }}
+```
+
+| Hook | Holds |
+|---|---|
+| `data-dice-appearance` | The name of the set |
+| `data-dice-material` | The material, when there is one |
+| `data-dice-texture` | The texture key, when there is one: the application's stylesheet maps it to a picture |
+| `--tilttek-dice-color` | The colour of the dice, when there is one |
+| `--tilttek-dice-ink` | The colour of the numbers: the ink of the appearance, or, on a coloured die without one, black or white, whichever contrasts more with the colour — at least 4.5:1 |
+
+```css
+.tilttek-dice-set[data-dice-appearance] .tilttek-dice-die {
+    background: var(--tilttek-dice-color, Canvas);
+    color: var(--tilttek-dice-ink, CanvasText);
+}
+.tilttek-dice-set[data-dice-texture="dice/marble"] .tilttek-dice-die { background-image: url(/images/dice/marble.webp); }
+```
+
+The bundle ships no stylesheet; the classes are hooks for the application's. A texture drawn under the numbers keeps
+them readable only when its colours stay close to `--tilttek-dice-color`.
 
 The words — `dropped`, `rerolled`, `exploded`, `success`, `failure` — and the faces' labels are translated in the
 configured domain when the translator is installed; untranslated, they show as written.

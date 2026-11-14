@@ -1,0 +1,65 @@
+# Upgrading
+
+## From 0.1 to 0.2
+
+### The journal's table
+
+The table `tilttek_dice_roll` has a nullable `context` column, indexed with `rolled_at`, and a `delivered` column:
+whether the `RollRecorded` of the roll was dispatched. Generate the migration:
+
+```sh
+bin/console doctrine:migrations:diff
+bin/console doctrine:migrations:migrate
+```
+
+or write it by hand. On MySQL, MariaDB and PostgreSQL:
+
+```sql
+ALTER TABLE tilttek_dice_roll ADD context VARCHAR(320) DEFAULT NULL;
+CREATE INDEX tilttek_dice_roll_context ON tilttek_dice_roll (context, rolled_at);
+ALTER TABLE tilttek_dice_roll ADD delivered BOOLEAN DEFAULT TRUE NOT NULL;
+```
+
+The rows already kept have no context and count as dispatched; nothing else changes in them, and they replay as
+before.
+
+### The journal's port
+
+`RecordedRollRepository` has two more methods: `getMany(array $ids): array`, the rolls of these identifiers in the order
+asked, each once, the unknown ones skipped, for at most `RecordedRollRepository::MANY` identifiers; and
+`ofContext(ResourceReference $context, int $limit): array`, the rolls of a context the latest first. An application
+with its own implementation of the port adds them. The bundle's implementations, on Doctrine and in memory, have them.
+
+### Rolling
+
+`rollReplayable()` takes the context of a roll, by name, after the rounding:
+
+```php
+$dice->rollReplayable('1d20', $member, context: $table);
+```
+
+and `DiceRolls` dispatches `RollRecorded` after each replayable roll it saves, when the application has an event
+dispatcher. `rollsIn()` and `recorded()` read the journal by context and by identifiers. A call that passed the first
+four arguments works unchanged.
+
+`rollReplayable()` also takes a `key`, by name, after the context: the same call with the same key returns the roll
+kept instead of rolling again. `RollRecorded` is dispatched at least once: a roll whose listener failed keeps its event
+due, and the same keyed call or `DiceRolls::deliver()` dispatches it again. A listener of `RollRecorded` may hear the
+same roll twice, and must be idempotent.
+
+### The appearance of a member's dice
+
+`DieAppearance` takes `ink` and `texture` after `image`, by name. An appearance that gave neither works unchanged. The
+detail of a roll writes `--tilttek-dice-ink` next to `--tilttek-dice-color` on a coloured set — black or white,
+whichever reads better, when the appearance gives no ink — and `data-dice-texture` when there is a texture. A
+stylesheet that wrote a fixed colour for the numbers of coloured dice reads `var(--tilttek-dice-ink)` instead; an
+overridden `roll_detail.html.twig` adds the two hooks from the bundle's template.
+
+The appearance in the view of a roll, `DiceExtension::view()`, has the keys `ink` and `texture` too.
+
+### The viewer's accessibility
+
+`DiceAppearance::appearance()` takes a third argument, `?Accessibility $viewer = null`: the viewer's accessibility,
+standard or high contrast, or null when the page does not know it. An application's own implementation of the port
+declares it, even to ignore it — PHP refuses an implementation that drops an argument of its interface. A call with two
+arguments works unchanged. `DiceRolls::appearance()`, `DiceExtension::view()` and `dice_roll_detail()` pass it on.

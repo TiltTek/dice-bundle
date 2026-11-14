@@ -1,4 +1,4 @@
-<!-- phil-dev source-sha256=ae787ba0bf8bbfac6cc4863e6870495e0ba227e6b255c23fcef765ed3eaacbc7 -->
+<!-- phil-dev source-sha256=8007d9ce46eff1dde6f43972469ebbc6318cea56acda75b5f74a673f3bfab13e -->
 # Lancer les dés
 
 `DiceRolls` est le service que l'application appelle. Une expression est un `Pool` ou une chaîne, lue dans la notation
@@ -25,15 +25,40 @@ $dice->translate($pool, 'roll20', RoundingMode::PositiveInfinity)->notices;     
 
 ```php
 $recorded = $dice->rollReplayable('4d6kh3', $member);   // kept in the journal
+$atTable = $dice->rollReplayable('1d20', $member, context: $table);
+$once = $dice->rollReplayable('1d20', $member, key: $requestKey);   // rolled once for this key
 $replay = $dice->replay($recorded->id());
 $replay->result;      // the roll, die for die
 $replay->matches();   // whether it gave what the journal holds
 ```
 
 `rollReplayable()` tire un identifiant et un germe, lance avec l'arrondi donné et enregistre un `RecordedRoll` daté par
-l'horloge, arrondi compris ; le propriétaire, une `ResourceReference`, est facultatif. `replay()` le relance à partir de
-son expression, de son germe et de son arrondi, et lève `UnknownRoll` pour un identifiant que le journal ne contient
-pas. `rollsOf($member, $limit)` liste les derniers lancers d'un membre, le plus récent d'abord.
+l'horloge, arrondi compris ; le propriétaire et le contexte (l'endroit où le lancer est fait, une table ou une
+partie), chacun une `ResourceReference`, sont facultatifs. Il émet ensuite `RollRecorded`, quand l'application a un
+répartiteur d'événements : voyez les [points d'extension](extension-points.md#un-lancer-enregistré). `replay()` le
+relance à partir de son expression, de son germe et de son arrondi, et lève `UnknownRoll` pour un identifiant que le
+journal ne contient pas.
+
+Avec une clé (`key`), celle de la requête ou d'un tour, l'identifiant du lancer est tiré du propriétaire et de la clé.
+Le même appel répété, après l'échec d'un écouteur ou une requête reprise, ne relance pas : il renvoie le lancer gardé,
+et émet son `RollRecorded` s'il ne l'a pas encore été. Une clé appartient au propriétaire : un autre propriétaire, ou un
+lancer sans propriétaire, relance sous la même clé. Sans clé, chaque appel relance.
+
+Le lancer note si son `RollRecorded` a été émis : quand un écouteur échoue, le lancer reste dans le journal avec son
+événement dû, et le même appel avec sa clé, ou `deliver($id)`, l'émet de nouveau ; `deliver()` renvoie faux quand il a
+déjà été émis. Les écouteurs sont donc idempotents.
+
+## Lire le journal
+
+```php
+$dice->rollsOf($member, 20);                // a member's latest rolls, the latest first
+$dice->rollsIn($table, 50);                 // the latest rolls made at a table, the latest first
+$dice->recorded([$id, $otherId]);           // these rolls, in the order asked
+```
+
+`recorded()` donne chaque lancer une fois et saute un identifiant que le journal ne contient pas. Elle lit au plus
+`RecordedRollRepository::MANY` identifiants distincts, soit 500, à la fois, et lève `LimitExceeded` au-delà : une page
+des lancers d'une table, un fil, le rejeu d'une partie lu par tranches.
 
 ## Lancers vérifiables
 

@@ -16,8 +16,8 @@ use Tilttek\Dice\Result\DiceResult;
 use Tilttek\Dice\Result\Outputs;
 use Tilttek\Dice\Result\PoolResult;
 use Tilttek\Dice\Result\RolledDie;
+use Tilttek\DiceBundle\Application\Accessibility;
 use Tilttek\DiceBundle\Application\DiceRolls;
-use Tilttek\DiceBundle\Application\DieAppearance;
 use Twig\Attribute\AsTwigFilter;
 use Twig\Attribute\AsTwigFunction;
 use Twig\Environment;
@@ -30,7 +30,8 @@ use Twig\Environment;
  * - `expression|dice_dialect('roll20')` writes it in a table's dialect, or gives null when the dialect cannot;
  * - `dice_roll(expression, locale)` rolls it;
  * - `dice_roll_detail(result, member, locale)` shows every die of a roll, how the result came, a face by its label and
- *   its shape as well as its colour, and the member's dice appearance.
+ *   its shape as well as its colour, and the member's dice appearance, its ink readable on its colour; a fourth
+ *   argument, `'high-contrast'` or `'standard'`, passes the viewer's accessibility to the appearance.
  *
  * The words of the detail — dropped, rerolled, exploded, success, failure — and the labels of the faces go through the
  * translator, in the configured domain, when there is one.
@@ -75,20 +76,22 @@ final readonly class DiceExtension
     }
 
     #[AsTwigFunction('dice_roll_detail', needsEnvironment: true, isSafe: ['html'])]
-    public function detail(Environment $twig, PoolResult $result, ?ResourceReference $member = null, ?string $locale = null): string
+    public function detail(Environment $twig, PoolResult $result, ?ResourceReference $member = null, ?string $locale = null, Accessibility|string|null $viewer = null): string
     {
-        return $twig->render(self::TEMPLATE, ['roll' => $this->view($result, $member, $locale)]);
+        return $twig->render(self::TEMPLATE, ['roll' => $this->view($result, $member, $locale, $viewer)]);
     }
 
     /**
      * What the template shows: for each instruction, its notation, its total, the text or list it gave — each text
      * through the translator, as a translation key or a text —, the faces it counted, and each set of dice with every
-     * die.
+     * die. The viewer's accessibility, an `Accessibility` or its value, goes to the appearance of the member's dice; any
+     * other text is no preference.
      *
-     * @return list<array{notation: string, total: ?int, text: ?string, tally: list<string>, sets: list<array{notation: string, value: int, appearance: ?array{name: string, color: ?string, material: ?string, image: ?string}, dice: list<array{label: string, value: int, shape: ?string, color: ?string, image: ?string, classes: list<string>, states: list<string>}>}>}>
+     * @return list<array{notation: string, total: ?int, text: ?string, tally: list<string>, sets: list<array{notation: string, value: int, appearance: ?array{name: string, color: ?string, ink: ?string, texture: ?string, material: ?string, image: ?string}, dice: list<array{label: string, value: int, shape: ?string, color: ?string, image: ?string, classes: list<string>, states: list<string>}>}>}>
      */
-    public function view(PoolResult $result, ?ResourceReference $member = null, ?string $locale = null): array
+    public function view(PoolResult $result, ?ResourceReference $member = null, ?string $locale = null, Accessibility|string|null $viewer = null): array
     {
+        $viewer = \is_string($viewer) ? Accessibility::tryFrom($viewer) : $viewer;
         $view = [];
 
         foreach ($result->results as $expression) {
@@ -98,7 +101,7 @@ final readonly class DiceExtension
                 'total' => $expression->total(),
                 'text' => $this->output($expression->result->output(), $expression->result instanceof DiceResult),
                 'tally' => $this->tally($sets),
-                'sets' => array_map(fn (DiceResult $set): array => $this->set($set, $member, $locale), $sets),
+                'sets' => array_map(fn (DiceResult $set): array => $this->set($set, $member, $locale, $viewer), $sets),
             ];
         }
 
@@ -112,9 +115,9 @@ final readonly class DiceExtension
     }
 
     /**
-     * @return array{notation: string, value: int, appearance: ?array{name: string, color: ?string, material: ?string, image: ?string}, dice: list<array{label: string, value: int, shape: ?string, color: ?string, image: ?string, classes: list<string>, states: list<string>}>}
+     * @return array{notation: string, value: int, appearance: ?array{name: string, color: ?string, ink: ?string, texture: ?string, material: ?string, image: ?string}, dice: list<array{label: string, value: int, shape: ?string, color: ?string, image: ?string, classes: list<string>, states: list<string>}>}
      */
-    private function set(DiceResult $set, ?ResourceReference $member, ?string $locale): array
+    private function set(DiceResult $set, ?ResourceReference $member, ?string $locale, ?Accessibility $viewer): array
     {
         $die = $set->expression instanceof Dice ? $set->expression->die : null;
         $sides = match (true) {
@@ -122,12 +125,12 @@ final readonly class DiceExtension
             $die instanceof FudgeDie => 6,
             default => null,
         };
-        $appearance = !$member instanceof ResourceReference || null === $sides ? null : $this->dice->appearance($member, $sides);
+        $appearance = !$member instanceof ResourceReference || null === $sides ? null : $this->dice->appearance($member, $sides, $viewer);
 
         return [
             'notation' => $this->dice->write(new Pool($set->expression), $locale),
             'value' => $set->value(),
-            'appearance' => $appearance instanceof DieAppearance ? ['name' => $appearance->name, 'color' => $appearance->color, 'material' => $appearance->material, 'image' => $appearance->image] : null,
+            'appearance' => $appearance?->toArray(),
             'dice' => array_map($this->rolledDie(...), $set->dice),
         ];
     }
