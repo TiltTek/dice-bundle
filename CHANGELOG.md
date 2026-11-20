@@ -4,9 +4,18 @@ All notable changes to `tilttek/dice-bundle` will be documented in this file.
 
 Updates should follow the [Keep a CHANGELOG](https://keepachangelog.com/) principles.
 
-## 0.2.1-alpha - 2026-11-17
+## 0.2.2-alpha - 2026-11-20
 
-Next version: 0.2.1-alpha.
+### Changed
+
+- `tilttek/dice` 0.2 or 0.3 required: 0.1 is no longer accepted.
+
+### Fixed
+
+- The package folder of the monorepo no longer holds a `dice` symbolic link to `tilttek/dice`; nothing read it, and
+  the published package never contained it.
+
+## 0.2.1-alpha - 2026-11-17
 
 ### Changed
 
